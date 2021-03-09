@@ -2,9 +2,9 @@ pragma solidity ^0.6.0;
 
 import '@openzeppelin/contracts/math/SafeMath.sol';
 
-import '../owner/Operator.sol';
+import '../owner/AdminRole.sol';
 
-contract Epoch is Operator {
+contract Epoch is AdminRole {
     using SafeMath for uint256;
 
     uint256 private period;
@@ -59,7 +59,7 @@ contract Epoch is Operator {
 
     /* ========== GOVERNANCE ========== */
 
-    function setPeriod(uint256 _period) external onlyOperator {
+    function setPeriod(uint256 _period) external onlyAdmin {
         period = _period;
     }
 }

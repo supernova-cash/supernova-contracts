@@ -5,15 +5,15 @@ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 
 import './lib/Safe112.sol';
-import './owner/Operator.sol';
+import './owner/AdminRole.sol';
 import './utils/ContractGuard.sol';
 import './interfaces/ISuperNovaAsset.sol';
 
-contract LPTWrapper {
+contract SHAREWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
-    IERC20 public lpt;
+    IERC20 public share;
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
@@ -29,22 +29,22 @@ contract LPTWrapper {
     function stake(uint256 amount) public virtual {
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
-        lpt.safeTransferFrom(msg.sender, address(this), amount);
+        share.safeTransferFrom(msg.sender, address(this), amount);
     }
 
     function withdraw(uint256 amount) public virtual {
         uint256 directorLPT = _balances[msg.sender];
         require(
             directorLPT >= amount,
-            'Boardroom: withdraw request greater than staked amount'
+            'Expansion: withdraw request greater than staked amount'
         );
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = directorLPT.sub(amount);
-        lpt.safeTransfer(msg.sender, amount);
+        share.safeTransfer(msg.sender, amount);
     }
 }
 
-contract Boardroom is LPTWrapper, ContractGuard, Operator {
+contract ShareBoardroom is SHAREWrapper, ContractGuard, AdminRole {
     using SafeERC20 for IERC20;
     using Address for address;
     using SafeMath for uint256;
@@ -74,9 +74,9 @@ contract Boardroom is LPTWrapper, ContractGuard, Operator {
 
     /* ========== CONSTRUCTOR ========== */
 
-    constructor(IERC20 _cash, IERC20 _lpt) public {
+    constructor(IERC20 _cash, IERC20 _share) public {
         cash = _cash;
-        lpt = _lpt;
+        share = _share;
 
         BoardSnapshot memory genesisSnapshot = BoardSnapshot({
             time: block.number,
@@ -90,7 +90,7 @@ contract Boardroom is LPTWrapper, ContractGuard, Operator {
     modifier directorExists {
         require(
             balanceOf(msg.sender) > 0,
-            'Boardroom: The director does not exist'
+            'Expansion: The director does not exist'
         );
         _;
     }
@@ -157,7 +157,7 @@ contract Boardroom is LPTWrapper, ContractGuard, Operator {
         onlyOneBlock
         updateReward(msg.sender)
     {
-        require(amount > 0, 'Boardroom: Cannot stake 0');
+        require(amount > 0, 'Expansion: Cannot stake 0');
         super.stake(amount);
         emit Staked(msg.sender, amount);
         lastStakeTime[msg.sender] = block.timestamp;
@@ -170,8 +170,8 @@ contract Boardroom is LPTWrapper, ContractGuard, Operator {
         directorExists
         updateReward(msg.sender)
     {
-        require(amount > 0, 'Boardroom: Cannot withdraw 0');
-        require(lastStakeTime[msg.sender] + 86400 < block.timestamp, "Boardroom: Cannot withdraw in ONE ERA");
+        require(amount > 0, 'Expansion: Cannot withdraw 0');
+        require(lastStakeTime[msg.sender] + 259200 < block.timestamp, "Expansion: Cannot withdraw in three ERA");
         super.withdraw(amount);
         emit Withdrawn(msg.sender, amount);
     }
@@ -193,12 +193,12 @@ contract Boardroom is LPTWrapper, ContractGuard, Operator {
     function allocateSeigniorage(uint256 amount)
         external
         onlyOneBlock
-        onlyOperator
+        onlyAdmin
     {
-        require(amount > 0, 'Boardroom: Cannot allocate 0');
+        require(amount > 0, 'Expansion: Cannot allocate 0');
         require(
             totalSupply() > 0,
-            'Boardroom: Cannot allocate when totalSupply is 0'
+            'Expansion: Cannot allocate when totalSupply is 0'
         );
 
         // Create & add new snapshot

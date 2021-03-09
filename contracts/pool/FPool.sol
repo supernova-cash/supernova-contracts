@@ -64,7 +64,7 @@ import '../interfaces/IRewardDistributionRecipient.sol';
 import '../owner/AdminRole.sol';
 
 
-contract TokenWrapper {
+contract FTokenWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -94,7 +94,7 @@ contract TokenWrapper {
     }
 }
 
-contract Pool is TokenWrapper, IRewardDistributionRecipient, AdminRole {
+contract FPool is FTokenWrapper, IRewardDistributionRecipient, AdminRole {
     IERC20 public token0;
     uint256 public duration;
     uint256 public starttime;
@@ -102,6 +102,7 @@ contract Pool is TokenWrapper, IRewardDistributionRecipient, AdminRole {
     uint256 public rewardRate = 0;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
+    IERC20 public filda;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
     mapping(address => uint256) public deposits;
@@ -116,7 +117,8 @@ contract Pool is TokenWrapper, IRewardDistributionRecipient, AdminRole {
         address token1_,
         uint256 reward,
         uint256 duration_,
-        uint256 starttime_
+        uint256 starttime_,
+        uint256 filda_
     ) public {
         token0 = IERC20(token0_);
         token1 = IERC20(token1_);
@@ -125,6 +127,7 @@ contract Pool is TokenWrapper, IRewardDistributionRecipient, AdminRole {
         rewardRate = reward.div(duration);
         lastUpdateTime = starttime;
         periodFinish = starttime.add(duration);
+        filda = IERC20(filda_);
     }
 
     modifier checkStart() {
@@ -168,6 +171,16 @@ contract Pool is TokenWrapper, IRewardDistributionRecipient, AdminRole {
                 .add(rewards[account]);
     }
 
+    function earnedFildaP(address account) public view returns (uint256) {
+        uint256 reward = earned(msg.sender);
+        if (reward > 0) {
+            if(filda.balanceOf(address(this)) > 0){
+                return reward.mul(filda.balanceOf(address(this))).div(token0.balanceOf(address(this)));
+            }
+        }
+        return 0;
+    }
+
     // stake visibility is public as overriding LPTokenWrapper's stake() function
     function stake(uint256 amount)
         public
@@ -197,12 +210,17 @@ contract Pool is TokenWrapper, IRewardDistributionRecipient, AdminRole {
 
     function exit() external {
         withdraw(balanceOf(msg.sender));
-        getReward();
+        getReward();       
     }
 
     function getReward() public updateReward(msg.sender) checkStart {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
+            if(filda.balanceOf(address(this)) > 0){
+                uint256 fildaP = reward.mul(filda.balanceOf(address(this))).div(token0.balanceOf(address(this)));
+                filda.safeTransfer(msg.sender, fildaP);
+            }
+
             rewards[msg.sender] = 0;
             token0.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);

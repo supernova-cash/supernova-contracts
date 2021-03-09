@@ -16,7 +16,7 @@ import './interfaces/IPegPool.sol';
 import './lib/Babylonian.sol';
 import './lib/FixedPoint.sol';
 import './lib/Safe112.sol';
-import './owner/Operator.sol';
+import './owner/AdminRole.sol';
 import './utils/Epoch.sol';
 import './utils/ContractGuard.sol';
 import './Fund.sol';
@@ -33,14 +33,14 @@ contract Treasury is ContractGuard, Epoch {
 
     // ========== FLAGS
     bool public migrated = false;
-    bool public initialized = false;
 
     // ========== CORE
     address public fund;
     address public cash;
     address public share;
     address public peg;
-    address public boardroom;
+    address public shareboardroom;
+    address public lpboardroom;
     address public sharePool;
     address public cashPool;
     address public pegPool;
@@ -51,7 +51,6 @@ contract Treasury is ContractGuard, Epoch {
     uint256 public cashPriceOne;
     uint256 public cashPriceCeiling;
     uint256 public cashPriceFloor;
-    uint256 private accumulatedSeigniorage = 0;
     uint256 public fundAllocationRate = 5; 
     uint256 public inflationPercentCeil;
     uint256 public initShare;
@@ -63,19 +62,21 @@ contract Treasury is ContractGuard, Epoch {
         address _share,
         address _peg,
         address _oracle,
-        address _boardroom,
+        address _shareboardroom,
+        address _lpboardroom,
         address _fund,
         address _cashPool,
         address _sharePool,
         address _pegPool,
         uint256 _initShare,
         uint256 _startTime
-    ) public Epoch(1 hours, _startTime, 0) {
+    ) public Epoch(1 days, _startTime, 0) {
         cash = _cash;
         share = _share;
         peg = _peg;
         oracle = _oracle;
-        boardroom = _boardroom;
+        shareboardroom = _shareboardroom;
+        lpboardroom = _lpboardroom;
         fund = _fund;
         cashPool = _cashPool;
         sharePool = _sharePool;
@@ -97,15 +98,16 @@ contract Treasury is ContractGuard, Epoch {
         _;
     }
 
-    modifier checkOperator {
+    modifier checkAdmin {
         require(
-            ISuperNovaAsset(cash).operator() == address(this) &&
-            ISuperNovaAsset(share).operator() == address(this) &&
-            Operator(boardroom).operator() == address(this),
+            AdminRole(cash).isAdmin(address(this)) &&
+            AdminRole(share).isAdmin(address(this)) &&
+            AdminRole(shareboardroom).isAdmin(address(this)) &&
+            AdminRole(lpboardroom).isAdmin(address(this)),
 
-            //Operator(SharePool).operator() == address(this)&&
-            //Operator(PegPool).operator() == address(this)&&
-            //Operator(CashPool).operator() == address(this),
+            //AdminRole(SharePool).isAdmin(address(this)) == address(this)&&
+            //AdminRole(PegPool).isAdmin(address(this)) == address(this)&&
+            //AdminRole(CashPool).isAdmin(address(this)) == address(this),
             'Treasury: need more permission'
         );
 
@@ -116,7 +118,7 @@ contract Treasury is ContractGuard, Epoch {
 
     // budget
     function getReserve() public view returns (uint256) {
-        return accumulatedSeigniorage;
+        return 0;
     }
 
     // oracle
@@ -132,32 +134,17 @@ contract Treasury is ContractGuard, Epoch {
         }
     }
 
-    /* ========== GOVERNANCE ========== */
-
-    function initialize() public checkOperator {
-        require(!initialized, 'Treasury: initialized');
-
-        // burn all of it's balance
-        ISuperNovaAsset(cash).burn(IERC20(cash).balanceOf(address(this)));
-
-        // set accumulatedSeigniorage to it's balance
-        accumulatedSeigniorage = IERC20(cash).balanceOf(address(this));
-
-        initialized = true;
-        emit Initialized(msg.sender, block.number);
-    }
-
-    function migrate(address target) public onlyOperator checkOperator {
+    function migrate(address target) public onlyAdmin checkAdmin {
         require(!migrated, 'Treasury: migrated');
 
         // cash
-        Operator(cash).transferOperator(target);
-        Operator(cash).transferOwnership(target);
+        AdminRole(cash).addAdmin(target);
+        AdminRole(cash).renounceAdmin();
         IERC20(cash).transfer(target, IERC20(cash).balanceOf(address(this)));
 
         // share
-        Operator(share).transferOperator(target);
-        Operator(share).transferOwnership(target);
+        AdminRole(share).addAdmin(target);
+        AdminRole(share).renounceAdmin();
         IERC20(share).transfer(target, IERC20(share).balanceOf(address(this)));
     
         // peg
@@ -167,12 +154,12 @@ contract Treasury is ContractGuard, Epoch {
         emit Migration(target);
     }
 
-    function setFund(address newFund) public onlyOperator {
+    function setFund(address newFund) public onlyAdmin {
         fund = newFund;
         emit ContributionPoolChanged(msg.sender, newFund);
     }
 
-    function setFundAllocationRate(uint256 rate) public onlyOperator {
+    function setFundAllocationRate(uint256 rate) public onlyAdmin {
         fundAllocationRate = rate;
         emit ContributionPoolRateChanged(msg.sender, rate);
     }
@@ -183,41 +170,15 @@ contract Treasury is ContractGuard, Epoch {
         try IOracle(oracle).update()  {} catch {}
     }
 
-    function allocateSeigniorage()
+    function allocateSeigniorage() //每个周期执行一次
         external
         onlyOneBlock
         checkMigration
         checkStartTime
         checkEpoch
-        checkOperator
+        checkAdmin
     {
-        //SharePool
-        uint256 ShareAmount= IERC20(share).balanceOf(sharePool);
-        if (ShareAmount > 0) {
-        IERC20(share).safeApprove(sharePool, ShareAmount);
-        ISharePool(sharePool).release(ShareAmount);
-        emit SharePoolFunded(now, ShareAmount);
-        }
-  
-        //CashPool
-
-        uint256 CashAmount= IERC20(cash).balanceOf(cashPool);
-        if (CashAmount > 0) {
-        IERC20(cash).safeApprove(cashPool, CashAmount);
-        ICashPool(cashPool).release(CashAmount);
-        emit CashPoolFunded(now, CashAmount);
-        }
-
-        //PegPool
-        
-        uint256 PegAmount= IERC20(peg).balanceOf(pegPool);
-        if (PegAmount > 0) {
-        IERC20(peg).safeApprove(pegPool, PegAmount);
-        IPegPool(pegPool).release(PegAmount);
-        emit PegPoolFunded(now, PegAmount);
-        }
-        
-        //销毁cash
+        //fund里面的cash全部销毁
         uint256 burnAmount= IERC20(cash).balanceOf(fund);
         ISuperNovaAsset(cash).burnFrom(fund, burnAmount);
         emit BurnCash(now, burnAmount);
@@ -225,15 +186,15 @@ contract Treasury is ContractGuard, Epoch {
         _updateCashPrice();
         uint256 cashPrice = _getCashPrice(oracle);
         uint256 percentage = cashPriceOne > cashPrice ? cashPriceOne.sub(cashPrice) : cashPrice.sub(cashPriceOne);
-        //价格<0.95
+        //当价格<0.95时 
         if (cashPrice <= cashPriceFloor) {
-            uint256 shareAmount=initShare.mul(10**18).div(10**2);
+            // 增发share 让用户用cash买share
+            uint256 shareAmount = initShare.div(10**2);
             ISuperNovaAsset(share).mint(sharePool, shareAmount);
-            IRewardPool(sharePool).notifyRewardAmount(shareAmount);
             emit MintSharePool(block.timestamp, shareAmount);
 
+            // 从fund里拿出peg 回收cash
             uint256 pegAmount= IERC20(peg).balanceOf(fund).mul(percentage).div(cashPriceOne);
-            IERC20(peg).safeApprove(pegPool, pegAmount);
             ISimpleERCFund(fund).withdraw(
                 peg,
                 pegAmount,
@@ -241,17 +202,14 @@ contract Treasury is ContractGuard, Epoch {
                 'Treasury: Desposit PegPool'
             );
             emit DespositPegPool(now, pegAmount);
-
         }
-
+    
         if (cashPrice <= cashPriceCeiling) {
             return; // just advance epoch instead revert
         }
 
         // circulating supply
-        uint256 cashSupply = IERC20(cash).totalSupply().sub(
-            accumulatedSeigniorage
-        );
+        uint256 cashSupply = IERC20(cash).totalSupply();
 
         percentage = Math.min(percentage, inflationPercentCeil);
 
@@ -261,33 +219,33 @@ contract Treasury is ContractGuard, Epoch {
 
         ISuperNovaAsset(cash).mint(address(this), seigniorage);
 
-        //ISuperNovaAsset(cash).mint(cashPool, fundReserve);
-
         if (fundReserve > 0) {
-            // 当前合约批准fund地址,开发者准备金数额
-            IERC20(cash).safeApprove(cashPool, fundReserve);
-            // 调用fund合约的存款方法存入开发者准备金
-            ISimpleERCFund(cashPool).deposit(
-                cash,
-                fundReserve,
-                'Treasury: Desposit CashPool'
-            );
+            IERC20(cash).safeTransfer(cashPool, fundReserve);
             emit DespositCashPool(now, fundReserve);
         }
-
-        seigniorage = seigniorage.sub(fundReserve);
-
+    
         // boardroom
-        uint256 boardroomReserve = seigniorage;
+        uint256 boardroomReserve = seigniorage.sub(fundReserve);
         if (boardroomReserve > 0) {
-            IERC20(cash).safeApprove(boardroom, boardroomReserve);
-            IBoardroom(boardroom).allocateSeigniorage(boardroomReserve);
+            // share董事会分到10%
+            uint256 shareBoardroomReserve = boardroomReserve.div(10);
+            // lp董事会分到90%
+            uint256 lpBoardroomReserve = boardroomReserve.sub(shareBoardroomReserve);
+            // 批准国库合约储备量数额
+            IERC20(cash).safeApprove(shareboardroom, shareBoardroomReserve);
+            //调用Boardroom合约的allocateSeigniorage方法,将CASH存入董事会
+            IBoardroom(shareboardroom).allocateSeigniorage(shareBoardroomReserve);
+
+            // 批准国库合约储备量数额
+            IERC20(cash).safeApprove(lpboardroom, lpBoardroomReserve);
+            //调用Boardroom合约的allocateSeigniorage方法,将CASH存入董事会
+            IBoardroom(lpboardroom).allocateSeigniorage(lpBoardroomReserve);
+            //触发已发放资金至董事会事件
             emit BoardroomFunded(now, boardroomReserve);
         }
     }
     
     // GOV
-    event Initialized(address indexed executor, uint256 at);
     event Migration(address indexed target);
     event ContributionPoolChanged(address indexed operator, address newFund);
     event ContributionPoolRateChanged(

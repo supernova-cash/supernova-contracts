@@ -6,7 +6,7 @@ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import '@openzeppelin/contracts/utils/Address.sol';
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 import '../interfaces/IRewardDistributionRecipient.sol';
-import '../owner/Operator.sol';
+import '../owner/AdminRole.sol';
 
 
 contract LPTokenWrapper {
@@ -43,7 +43,7 @@ contract LPTokenWrapper {
 contract LPPool is
     LPTokenWrapper,
     IRewardDistributionRecipient,
-    Operator
+    AdminRole
 {
     IERC20 public sShare;
     uint256 public constant DURATION = 30 days; //days
@@ -152,9 +152,9 @@ contract LPPool is
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
             rewards[msg.sender] = 0;
-            sShare.safeTransfer(msg.sender, reward.div(100).mul(95));
-            sShare.safeTransfer(snGroup, reward.div(100).mul(5));
-            emit RewardPaid(msg.sender, reward.div(100).mul(95));
+            sShare.safeTransfer(msg.sender, reward);
+            sShare.safeTransfer(snGroup, reward.div(19));
+            emit RewardPaid(msg.sender, reward);
         }
     }
 
@@ -201,7 +201,7 @@ contract LPPool is
 
     function updateStartTime(uint256 starttime_)
         external
-        onlyOperator
+        onlyAdmin
     {   
         starttime = starttime_;
     }

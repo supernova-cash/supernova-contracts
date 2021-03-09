@@ -3,10 +3,10 @@ pragma solidity ^0.6.0;
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 
-import './owner/Operator.sol';
+import './owner/AdminRole.sol';
 import './interfaces/ISimpleERCFund.sol';
 
-contract Fund is ISimpleERCFund, Operator {
+contract Fund is ISimpleERCFund, AdminRole {
     using SafeERC20 for IERC20;
 
     function deposit(
@@ -23,7 +23,7 @@ contract Fund is ISimpleERCFund, Operator {
         uint256 amount,
         address to,
         string memory reason
-    ) public override onlyOperator {
+    ) public override onlyAdmin {
         IERC20(token).safeTransfer(to, amount);
         emit Withdrawal(msg.sender, to, now, reason);
     }

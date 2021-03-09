@@ -66,54 +66,15 @@ import '../interfaces/IRewardDistributionRecipient.sol';
 
 import '../interfaces/ISimpleERCFund.sol';
 
-// File: contracts/owner/Operator.sol'
+// File: contracts/owner/AdminRole.sol'
 
-import '../owner/Operator.sol';
+import '../owner/AdminRole.sol';
 
 // File: contracts/utils/ContractGuard.sol'
 import '../utils/ContractGuard.sol';
 
+import '../wrapper/PEGWrapper.sol';
 
-contract PEGWrapper is Operator{
-    using SafeMath for uint256;
-    using SafeERC20 for IERC20;
-    using Address for address;
-
-    IERC20 public peg;
-
-    uint256 private _totalSupply;
-    mapping(address => uint256) private _balances;
-    address[] private addrList;
-
-    function totalSupply() public view returns (uint256) {
-        return _totalSupply;
-    }
-
-    function balanceOf(address account) public view returns (uint256) {
-        return _balances[account];
-    }
-
-    function stake(uint256 amount) public virtual {
-        if(_balances[msg.sender] == 0){
-            addrList.push(msg.sender);  //新来的 记录地址
-        }
-
-        _totalSupply = _totalSupply.add(amount);
-        _balances[msg.sender] = _balances[msg.sender].add(amount);
-        peg.safeTransferFrom(msg.sender, address(this), amount);
-    }
-
-    function withdraw(uint256 amount) public virtual {
-        require(0 > 1, "unable to withdraw");
-    }
-
-    function balanceClean() onlyOperator public {
-        _totalSupply = 0 ;
-        for(uint i = 0; i < addrList.length; i++){
-            _balances[addrList[i]]= 0;
-        }
-    }
-}
 
 contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
 
@@ -236,7 +197,6 @@ contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
         public
         override
         onlyOneBlock
-        updateReward(msg.sender)
     {
         require(amount > 0, 'SPool: Cannot stake 0');
         require(block.timestamp >= starttime, 'SPool: not start');
@@ -282,7 +242,7 @@ contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
     function release(uint256 amount)
         external
         onlyOneBlock
-        onlyOperator
+        onlyAdmin
     {
         require(once, 'SPool: release err');
         // 确认分配数量大于0
@@ -303,27 +263,23 @@ contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
         //更新快照推入数组
         SPoolHistory.push(newSnapshot);
 
-
         emit RewardAdded(amount);
-
-        
 
         uint256 fundamount= totalSupply();
         peg.safeApprove(fund, fundamount);
-            // 调用fund合约的存款方法存入sFUND
-            ISimpleERCFund(fund).deposit(
-                address(peg),
-                fundamount,
-                'Treasury: Desposit Fund'
-            );
-            emit DespositFund(now, fundamount);
+        // 调用fund合约的存款方法存入sFUND
+        ISimpleERCFund(fund).deposit(
+            address(peg),
+            fundamount,
+            'Treasury: Desposit Fund'
+        );
+        emit DespositFund(now, fundamount);
         once = false;
-        balanceClean();
     }
 
     function updateStartTime(uint256 starttime_)
         external
-        onlyOperator
+        onlyAdmin
     {   
         starttime = starttime_;
     }

@@ -1,9 +1,9 @@
 pragma solidity ^0.6.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20Burnable.sol";
-import "./owner/Operator.sol";
+import "./owner/AdminRole.sol";
 
-contract Cash is ERC20Burnable, Operator {
+contract Cash is ERC20Burnable, AdminRole {
     constructor(string memory name_, string memory symbol_)
         public
         ERC20(name_, symbol_)
@@ -13,7 +13,7 @@ contract Cash is ERC20Burnable, Operator {
 
     function mint(address recipient_, uint256 amount_)
         public
-        onlyOperator
+        onlyAdmin
         returns (bool)
     {
         uint256 balanceBefore = balanceOf(recipient_);
@@ -23,14 +23,14 @@ contract Cash is ERC20Burnable, Operator {
         return balanceAfter > balanceBefore;
     }
 
-    function burn(uint256 amount) public override onlyOperator {
+    function burn(uint256 amount) public override onlyAdmin {
         super.burn(amount);
     }
 
     function burnFrom(address account, uint256 amount)
         public
         override
-        onlyOperator
+        onlyAdmin
     {
         super.burnFrom(account, amount);
     }

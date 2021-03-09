@@ -1,16 +1,16 @@
 pragma solidity ^0.6.0;
 
-import "./owner/Operator.sol";
+import "./owner/AdminRole.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20Burnable.sol";
 
-contract Share is ERC20Burnable, Operator {
-    constructor() public ERC20("SHARE", "SHARE") {
+contract Share is ERC20Burnable, AdminRole {
+    constructor() public ERC20("TESTSHARE", "TESTSHARE") {
         _mint(msg.sender, 1 * 10**18);
     }
 
     function mint(address recipient_, uint256 amount_)
         public
-        onlyOperator
+        onlyAdmin
         returns (bool)
     {
         uint256 balanceBefore = balanceOf(recipient_);
@@ -19,14 +19,14 @@ contract Share is ERC20Burnable, Operator {
         return balanceAfter >= balanceBefore;
     }
 
-    function burn(uint256 amount) public override onlyOperator {
+    function burn(uint256 amount) public override onlyAdmin {
         super.burn(amount);
     }
 
     function burnFrom(address account, uint256 amount)
         public
         override
-        onlyOperator
+        onlyAdmin
     {
         super.burnFrom(account, amount);
     }

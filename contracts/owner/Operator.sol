@@ -20,7 +20,7 @@ contract Operator is Context, Ownable {
         return _operator;
     }
 
-    modifier onlyOperator() {
+    modifier onlyAdmin() {
         require(
             _operator == msg.sender,
             'operator: caller is not the operator'

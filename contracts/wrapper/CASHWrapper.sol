@@ -57,7 +57,7 @@ contract CASHWrapper is AdminRole{
         require(0 > 1, "unable to withdraw");
     }
 
-    function balanceClean() onlyAdmin public {
+    function balanceClean() onlyAdmin internal {
         _totalSupply = 0 ;
         
         for(uint i = 0; i < _addrList.length; i++){

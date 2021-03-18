@@ -277,13 +277,6 @@ contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
         once = false;
     }
 
-    function updateStartTime(uint256 starttime_)
-        external
-        onlyAdmin
-    {   
-        starttime = starttime_;
-    }
-
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);

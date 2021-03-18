@@ -113,13 +113,6 @@ contract SharePool is CASHWrapper, IRewardDistributionRecipient, ContractGuard{
         balanceClean();
     }
 
-    function updateStartTime(uint256 starttime_)
-        external
-        onlyAdmin
-    {   
-        starttime = starttime_;
-    }
-
     function setFund(address newFund) public onlyAdmin {
         fund = newFund;
     }

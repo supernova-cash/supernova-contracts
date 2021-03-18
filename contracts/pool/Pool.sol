@@ -233,11 +233,4 @@ contract Pool is TokenWrapper, IRewardDistributionRecipient, AdminRole {
             emit RewardAdded(reward);
         }
     }
-
-    function updateStartTime(uint256 starttime_)
-        external
-        onlyAdmin
-    {   
-        starttime = starttime_;
-    }
 }

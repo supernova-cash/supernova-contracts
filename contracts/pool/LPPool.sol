@@ -198,11 +198,4 @@ contract LPPool is
             emit RewardAdded(reward);
         }
     }
-
-    function updateStartTime(uint256 starttime_)
-        external
-        onlyAdmin
-    {   
-        starttime = starttime_;
-    }
 }

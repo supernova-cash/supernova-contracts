@@ -9,6 +9,8 @@ import './interfaces/ISimpleERCFund.sol';
 contract Fund is ISimpleERCFund, AdminRole {
     using SafeERC20 for IERC20;
 
+    address public pegPool;
+
     function deposit(
         address token,
         uint256 amount,
@@ -24,8 +26,13 @@ contract Fund is ISimpleERCFund, AdminRole {
         address to,
         string memory reason
     ) public override onlyAdmin {
+        require(to == pegPool, "address err");
         IERC20(token).safeTransfer(to, amount);
         emit Withdrawal(msg.sender, to, now, reason);
+    }
+
+    function setPegPool(address pegPool_) public onlyAdmin {
+        pegPool = pegPool_;
     }
 
     event Deposit(address indexed from, uint256 indexed at, string reason);

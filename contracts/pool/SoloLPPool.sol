@@ -6,19 +6,30 @@ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import '@openzeppelin/contracts/utils/Address.sol';
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 import '../owner/AdminRole.sol';
+import '../interfaces/ISolo.sol';
 
 
-contract LPTokenWrapper {
+contract SoloLPTokenWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     IERC20 public lpt;
+    address public SoloSwap;
+    uint256 public SoloSwapStakeOpen = 0;
+    uint256 public SoloSwapWithdrawOpen = 0;
+    uint256 public SoloPid;
 
     uint256 private _totalSupply;
+    uint256 private _totalSupplySoloSwap;
+
     mapping(address => uint256) private _balances;
 
     function totalSupply() public view returns (uint256) {
         return _totalSupply;
+    }
+
+    function totalSupplySoloSwap() public view returns (uint256) {
+        return _totalSupplySoloSwap;
     }
 
     function balanceOf(address account) public view returns (uint256) {
@@ -29,18 +40,48 @@ contract LPTokenWrapper {
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         lpt.safeTransferFrom(msg.sender, address(this), amount);
+
+        stakeSoloSwap(amount);
+    }
+
+    function stakeSoloSwap(uint256 amount) internal {
+        if(SoloSwapStakeOpen == 0){
+            return;
+        }
+        _totalSupplySoloSwap = _totalSupplySoloSwap.add(amount);
+        lpt.safeApprove(SoloSwap, amount);
+        ISolo(SoloSwap).deposit(SoloPid, amount);
     }
 
     function withdraw(uint256 amount) public virtual {
+        require(amount <=  _balances[msg.sender], 'Pool: Cannot withdraw');
+        
+        withdrawSoloSwap(amount);
+
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
         lpt.safeTransfer(msg.sender, amount);
     }
+
+    function withdrawSoloSwap(uint256 amount) internal{
+        if(SoloSwapWithdrawOpen == 0){
+            return;
+        }
+        if(_totalSupplySoloSwap == 0){
+            return;
+        }
+        if(amount > _totalSupplySoloSwap){
+            amount = _totalSupplySoloSwap;
+        }
+        _totalSupplySoloSwap = _totalSupplySoloSwap.sub(amount);
+
+        ISolo(SoloSwap).withdraw(SoloPid, amount);
+    }
 }
 
 
-contract LPPool is
-    LPTokenWrapper,
+contract SoloLPPool is
+    SoloLPTokenWrapper,
     AdminRole
 {
     IERC20 public sShare;
@@ -53,6 +94,7 @@ contract LPPool is
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
     address public snGroup;
+    IERC20 public MDX;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
 
@@ -66,7 +108,8 @@ contract LPPool is
         address lptoken_,
         address snGroup_,
         uint256 initreward_,
-        uint256 starttime_ 
+        uint256 starttime_,
+        address MDX_
     ) public {
         sShare = IERC20(sShare_);
         lpt = IERC20(lptoken_);
@@ -76,6 +119,7 @@ contract LPPool is
         lastUpdateTime = starttime;
         periodFinish = starttime.add(DURATION);
         snGroup = snGroup_;
+        MDX = IERC20(MDX_);
     }
 
     modifier updateReward(address account) {
@@ -186,5 +230,27 @@ contract LPPool is
 
     function transferShare(address account, uint256 amount) external onlyAdmin{   
         sShare.safeTransfer(account, amount);
+    }
+
+    function setSoloSwap(address addr_, uint256 pid_, uint256 stakeOpen_, uint256 withdrawOpen_)
+        external
+        onlyAdmin
+    {   
+        SoloSwap = addr_;
+        SoloPid = pid_;
+        SoloSwapStakeOpen = 0;
+        SoloSwapWithdrawOpen = 0;
+    }
+
+    function stakeSoloSwap2(uint256 amount) external onlyAdmin{
+        super.stakeSoloSwap(amount);
+    }
+
+    function withdrawSoloSwap2(uint256 amount) external onlyAdmin {
+        super.withdrawSoloSwap(amount);
+    }
+
+    function getMDX(address addr_, uint256 amount) external onlyAdmin {
+        MDX.safeTransfer(addr_, amount);
     }
 }

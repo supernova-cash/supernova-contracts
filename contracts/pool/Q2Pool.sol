@@ -1,66 +1,13 @@
 pragma solidity ^0.6.0;
-/**
- *Submitted for verification at Etherscan.io on 2020-07-17
- */
+import "@openzeppelin/contracts/math/Math.sol";
+import "@openzeppelin/contracts/math/SafeMath.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
+import "../owner/AdminRole.sol";
+import "../LiquidityOracle.sol";
 
-/*
-   ____            __   __        __   _
-  / __/__ __ ___  / /_ / /  ___  / /_ (_)__ __
- _\ \ / // // _ \/ __// _ \/ -_)/ __// / \ \ /
-/___/ \_, //_//_/\__//_//_/\__/ \__//_/ /_\_\
-     /___/
-* Synthetix: BASISCASHRewards.sol
-*
-* Docs: https://docs.synthetix.io/
-*
-*
-* MIT License
-* ===========
-*
-* Copyright (c) 2020 Synthetix
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-*/
-
-// File: @openzeppelin/contracts/math/Math.sol
-
-import '@openzeppelin/contracts/math/Math.sol';
-
-// File: @openzeppelin/contracts/math/SafeMath.sol
-
-import '@openzeppelin/contracts/math/SafeMath.sol';
-
-// File: @openzeppelin/contracts/token/ERC20/IERC20.sol
-
-import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-
-// File: @openzeppelin/contracts/utils/Address.sol
-
-import '@openzeppelin/contracts/utils/Address.sol';
-
-// File: @openzeppelin/contracts/token/ERC20/SafeERC20.sol
-
-import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
-
-import '../owner/AdminRole.sol';
-
-
-contract FTokenWrapper {
+contract TokenWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
@@ -68,6 +15,11 @@ contract FTokenWrapper {
 
     uint256 private _totalSupply;
     mapping(address => uint256) private _balances;
+    address[] private _addrList;
+
+    function addrList() public view returns (address[] memory) {
+        return _addrList;
+    }
 
     function totalSupply() public view returns (uint256) {
         return _totalSupply;
@@ -78,6 +30,19 @@ contract FTokenWrapper {
     }
 
     function stake(uint256 amount) public virtual {
+        if (_balances[msg.sender] == 0) {
+            bool is_new = true;
+            for (uint256 i = 0; i < _addrList.length; i++) {
+                if (_addrList[i] == msg.sender) {
+                    is_new = false;
+                    break;
+                }
+            }
+            if (is_new) {
+                _addrList.push(msg.sender);
+            }
+        }
+
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         token1.safeTransferFrom(msg.sender, address(this), amount);
@@ -90,7 +55,7 @@ contract FTokenWrapper {
     }
 }
 
-contract FPool is FTokenWrapper, AdminRole {
+contract QPool2 is TokenWrapper, AdminRole {
     IERC20 public token0;
     uint256 public duration;
     uint256 public starttime;
@@ -98,10 +63,14 @@ contract FPool is FTokenWrapper, AdminRole {
     uint256 public rewardRate = 0;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
-    IERC20 public filda;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
     mapping(address => uint256) public deposits;
+    address public liquidityOracle;
+    uint256 public minTVL;
+    bool public tvlLine = false;
+    uint256 public releaseAmount;
+    uint256 public intialAmount;
 
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
@@ -114,20 +83,24 @@ contract FPool is FTokenWrapper, AdminRole {
         uint256 reward,
         uint256 duration_,
         uint256 starttime_,
-        uint256 filda_
+        address liquidityOracle_,
+        uint256 minTVL_,
+        uint256 intialAmount_
     ) public {
         token0 = IERC20(token0_);
         token1 = IERC20(token1_);
         starttime = starttime_;
-        duration = duration_ * 86400;
+        duration = duration_;
         rewardRate = reward.div(duration);
         lastUpdateTime = starttime;
         periodFinish = starttime.add(duration);
-        filda = IERC20(filda_);
+        liquidityOracle = liquidityOracle_;
+        minTVL = minTVL_;
+        intialAmount = intialAmount_;
     }
 
     modifier checkStart() {
-        require(block.timestamp >= starttime, 'Pool: not start');
+        require(block.timestamp >= starttime, "Pool: not start");
         _;
     }
 
@@ -141,6 +114,16 @@ contract FPool is FTokenWrapper, AdminRole {
         _;
     }
 
+    function enabled() public returns (bool) {
+        if (tvlLine) {
+            return true;
+        }
+        if (LiquidityOracle(liquidityOracle).tvl() >= minTVL) {
+            tvlLine = true;
+        }
+        return tvlLine;
+    }
+
     function lastTimeRewardApplicable() public view returns (uint256) {
         return Math.min(block.timestamp, periodFinish);
     }
@@ -149,6 +132,7 @@ contract FPool is FTokenWrapper, AdminRole {
         if (totalSupply() == 0) {
             return rewardPerTokenStored;
         }
+
         return
             rewardPerTokenStored.add(
                 lastTimeRewardApplicable()
@@ -167,16 +151,6 @@ contract FPool is FTokenWrapper, AdminRole {
                 .add(rewards[account]);
     }
 
-    function earnedFildaP(address account) public view returns (uint256) {
-        uint256 reward = earned(msg.sender);
-        if (reward > 0) {
-            if(filda.balanceOf(address(this)) > 0){
-                return reward.mul(filda.balanceOf(address(this))).div(token0.balanceOf(address(this)));
-            }
-        }
-        return 0;
-    }
-
     // stake visibility is public as overriding LPTokenWrapper's stake() function
     function stake(uint256 amount)
         public
@@ -184,12 +158,13 @@ contract FPool is FTokenWrapper, AdminRole {
         updateReward(msg.sender)
         checkStart
     {
-        require(amount > 0, 'Pool: Cannot stake 0');
+        require(amount > 0, "Pool: Cannot stake 0");
         uint256 newDeposit = deposits[msg.sender].add(amount);
-        
+
         deposits[msg.sender] = newDeposit;
         super.stake(amount);
         emit Staked(msg.sender, amount);
+        LiquidityOracle(liquidityOracle).update();
     }
 
     function withdraw(uint256 amount)
@@ -198,7 +173,7 @@ contract FPool is FTokenWrapper, AdminRole {
         updateReward(msg.sender)
         checkStart
     {
-        require(amount > 0, 'Pool: Cannot withdraw 0');
+        require(amount > 0, "Pool: Cannot withdraw 0");
         deposits[msg.sender] = deposits[msg.sender].sub(amount);
         super.withdraw(amount);
         emit Withdrawn(msg.sender, amount);
@@ -206,27 +181,58 @@ contract FPool is FTokenWrapper, AdminRole {
 
     function exit() external {
         withdraw(balanceOf(msg.sender));
-        getReward();       
+        getReward();
     }
 
     function getReward() public updateReward(msg.sender) checkStart {
+        require(enabled(), "TVL is not enough");
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
-            if(filda.balanceOf(address(this)) > 0){
-                uint256 fildaP = reward.mul(filda.balanceOf(address(this))).div(token0.balanceOf(address(this)));
-                filda.safeTransfer(msg.sender, fildaP);
-            }
-
             rewards[msg.sender] = 0;
             token0.safeTransfer(msg.sender, reward);
             emit RewardPaid(msg.sender, reward);
         }
     }
 
-    function updateStartTime(uint256 starttime_)
+    function notifyRewardAmount(uint256 reward) private {
+        periodFinish = periodFinish.add(duration);
+        if (periodFinish > block.timestamp) {
+            rewardRate = reward.div(periodFinish.sub(block.timestamp));
+        } else {
+            rewardRate = 0;
+        }
+    }
+
+    function updateStartTime(uint256 starttime_) external onlyAdmin {
+        starttime = starttime_;
+    }
+
+    function updateLiquidity(address liquidityOracle_, uint256 minTVL_)
         external
         onlyAdmin
-    {   
-        starttime = starttime_;
+    {
+        liquidityOracle = liquidityOracle_;
+        minTVL = minTVL_;
+    }
+
+    function renew() external onlyAdmin {
+        address[] memory _addrList = addrList();
+        for (uint256 i = 0; i < _addrList.length; i++) {
+            rewards[_addrList[i]] = earned(_addrList[i]);
+        }
+
+        uint256 releaseAmount1 = intialAmount;
+        uint256 tvl = LiquidityOracle(liquidityOracle).tvl();
+        if (tvl < minTVL) {
+            releaseAmount1 = intialAmount.mul(tvl).div(minTVL);
+        }
+
+        if (releaseAmount1 >= releaseAmount) {
+            uint256 reward = releaseAmount1.sub(releaseAmount);
+            notifyRewardAmount(reward);
+            releaseAmount = releaseAmount1;
+        } else {
+            notifyRewardAmount(0);
+        }
     }
 }

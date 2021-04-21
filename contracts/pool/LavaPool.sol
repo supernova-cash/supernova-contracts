@@ -1,76 +1,36 @@
 pragma solidity ^0.6.0;
-/**
- *Submitted for verification at Etherscan.io on 2020-07-17
- */
-
-/*
-   ____            __   __        __   _
-  / __/__ __ ___  / /_ / /  ___  / /_ (_)__ __
- _\ \ / // // _ \/ __// _ \/ -_)/ __// / \ \ /
-/___/ \_, //_//_/\__//_//_/\__/ \__//_/ /_\_\
-     /___/
-* Synthetix: BASISCASHRewards.sol
-*
-* Docs: https://docs.synthetix.io/
-*
-*
-* MIT License
-* ===========
-*
-* Copyright (c) 2020 Synthetix
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-*/
-
-// File: @openzeppelin/contracts/math/Math.sol
-
 import '@openzeppelin/contracts/math/Math.sol';
-
-// File: @openzeppelin/contracts/math/SafeMath.sol
-
 import '@openzeppelin/contracts/math/SafeMath.sol';
-
-// File: @openzeppelin/contracts/token/ERC20/IERC20.sol
-
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-
-// File: @openzeppelin/contracts/utils/Address.sol
-
 import '@openzeppelin/contracts/utils/Address.sol';
-
-// File: @openzeppelin/contracts/token/ERC20/SafeERC20.sol
-
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
-
 import '../owner/AdminRole.sol';
 
+interface ILavaSwap {
+    function deposit(uint256 _pid, uint256 _amount) external;
+    function withdraw(uint256 _pid, uint256 _amount) external;
+}
 
-contract FTokenWrapper {
+contract LavaTokenWrapper {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
     IERC20 public token1;
+    address public lavaSwap;
+    uint256 public lavaSwapOpen = 0;
+    uint256 public lavaPid;
 
     uint256 private _totalSupply;
+    uint256 private _totalSupplyLavaSwap;
+    
     mapping(address => uint256) private _balances;
 
     function totalSupply() public view returns (uint256) {
         return _totalSupply;
+    }
+
+    function totalSupplyLavaSwap() public view returns (uint256) {
+        return _totalSupplyLavaSwap;
     }
 
     function balanceOf(address account) public view returns (uint256) {
@@ -81,16 +41,43 @@ contract FTokenWrapper {
         _totalSupply = _totalSupply.add(amount);
         _balances[msg.sender] = _balances[msg.sender].add(amount);
         token1.safeTransferFrom(msg.sender, address(this), amount);
+
+        stakeLavaSwap(amount);
+    }
+
+    function stakeLavaSwap(uint256 amount) internal {
+        if(lavaSwapOpen == 0){
+            return;
+        }
+        _totalSupplyLavaSwap = _totalSupplyLavaSwap.add(amount);
+        token1.safeApprove(lavaSwap, amount);
+        ILavaSwap(lavaSwap).deposit(lavaPid, amount);
     }
 
     function withdraw(uint256 amount) public virtual {
+        require(amount <=  _balances[msg.sender], 'Pool: Cannot withdraw');
+        
+        withdrawLavaSwap(amount);
+
         _totalSupply = _totalSupply.sub(amount);
         _balances[msg.sender] = _balances[msg.sender].sub(amount);
         token1.safeTransfer(msg.sender, amount);
     }
+
+    function withdrawLavaSwap(uint256 amount) internal{
+        if(_totalSupplyLavaSwap == 0){
+            return;
+        }
+        if(amount > _totalSupplyLavaSwap){
+            amount = _totalSupplyLavaSwap;
+        }
+        _totalSupplyLavaSwap = _totalSupplyLavaSwap.sub(amount);
+
+        ILavaSwap(lavaSwap).withdraw(lavaPid, amount);
+    }
 }
 
-contract FPool is FTokenWrapper, AdminRole {
+contract LavaPool is LavaTokenWrapper, AdminRole {
     IERC20 public token0;
     uint256 public duration;
     uint256 public starttime;
@@ -98,7 +85,8 @@ contract FPool is FTokenWrapper, AdminRole {
     uint256 public rewardRate = 0;
     uint256 public lastUpdateTime;
     uint256 public rewardPerTokenStored;
-    IERC20 public filda;
+    IERC20 public lava;
+    address public snGroup;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
     mapping(address => uint256) public deposits;
@@ -114,7 +102,8 @@ contract FPool is FTokenWrapper, AdminRole {
         uint256 reward,
         uint256 duration_,
         uint256 starttime_,
-        uint256 filda_
+        uint256 lava_,
+        address snGroup_
     ) public {
         token0 = IERC20(token0_);
         token1 = IERC20(token1_);
@@ -123,7 +112,8 @@ contract FPool is FTokenWrapper, AdminRole {
         rewardRate = reward.div(duration);
         lastUpdateTime = starttime;
         periodFinish = starttime.add(duration);
-        filda = IERC20(filda_);
+        lava = IERC20(lava_);
+        snGroup = snGroup_;
     }
 
     modifier checkStart() {
@@ -164,20 +154,21 @@ contract FPool is FTokenWrapper, AdminRole {
             balanceOf(account)
                 .mul(rewardPerToken().sub(userRewardPerTokenPaid[account]))
                 .div(1e18)
-                .add(rewards[account]);
+                .add(rewards[account])
+                .mul(95)
+                .div(100);
     }
 
-    function earnedFildaP(address account) public view returns (uint256) {
+    function earnedLavaP(address account) public view returns (uint256) {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
-            if(filda.balanceOf(address(this)) > 0){
-                return reward.mul(filda.balanceOf(address(this))).div(token0.balanceOf(address(this)));
+            if(lava.balanceOf(address(this)) > 0){
+                return reward.mul(lava.balanceOf(address(this))).div(token0.balanceOf(address(this)));
             }
         }
         return 0;
     }
 
-    // stake visibility is public as overriding LPTokenWrapper's stake() function
     function stake(uint256 amount)
         public
         override
@@ -212,13 +203,14 @@ contract FPool is FTokenWrapper, AdminRole {
     function getReward() public updateReward(msg.sender) checkStart {
         uint256 reward = earned(msg.sender);
         if (reward > 0) {
-            if(filda.balanceOf(address(this)) > 0){
-                uint256 fildaP = reward.mul(filda.balanceOf(address(this))).div(token0.balanceOf(address(this)));
-                filda.safeTransfer(msg.sender, fildaP);
+            if(lava.balanceOf(address(this)) > 0){
+                uint256 lavaP = reward.mul(lava.balanceOf(address(this))).div(token0.balanceOf(address(this)));
+                lava.safeTransfer(msg.sender, lavaP);
             }
 
             rewards[msg.sender] = 0;
             token0.safeTransfer(msg.sender, reward);
+            token0.safeTransfer(snGroup, reward.div(19));
             emit RewardPaid(msg.sender, reward);
         }
     }
@@ -228,5 +220,30 @@ contract FPool is FTokenWrapper, AdminRole {
         onlyAdmin
     {   
         starttime = starttime_;
+    }
+
+    function setLavaSwap(address addr_, uint256 pid_, uint256 lavaOpen_)
+        external
+        onlyAdmin
+    {   
+        lavaSwap = addr_;
+        lavaSwapOpen = lavaOpen_;
+        lavaPid = pid_;
+    }
+
+    function stakeLavaSwap2(uint256 amount) external onlyAdmin{
+        super.stakeLavaSwap(amount);
+    }
+
+    function withdrawLavaSwap2(uint256 amount) external onlyAdmin {
+        super.withdrawLavaSwap(amount);
+    }
+
+    function getLava(address addr_, uint256 amount) external onlyAdmin {
+        lava.safeTransfer(addr_, amount);
+    }
+
+    function getToken0(address addr_, uint256 amount) external onlyAdmin {
+        token0.safeTransfer(addr_, amount);
     }
 }

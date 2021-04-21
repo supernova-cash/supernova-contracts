@@ -8,39 +8,78 @@ import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 import '../owner/AdminRole.sol';
 
 
-contract LPTokenWrapper {
+contract LPTokenWrapper2 {
     using SafeMath for uint256;
     using SafeERC20 for IERC20;
 
-    IERC20 public lpt;
+    IERC20 public lpt0;
+    IERC20 public lpt1;
 
-    uint256 private _totalSupply;
-    mapping(address => uint256) private _balances;
+    uint256 private _totalSupply0;
+    uint256 private _totalSupply1;
+    mapping(address => uint256) private _balances0;
+    mapping(address => uint256) private _balances1;
 
     function totalSupply() public view returns (uint256) {
-        return _totalSupply;
+        return _totalSupply0.add(_totalSupply1);
+    }
+
+    function totalSupply0() public view returns (uint256) {
+        return _totalSupply0;
+    }
+
+    function totalSupply1() public view returns (uint256) {
+        return _totalSupply1;
     }
 
     function balanceOf(address account) public view returns (uint256) {
-        return _balances[account];
+        return _balances0[account].add(_balances1[account]);
     }
 
-    function stake(uint256 amount) public virtual {
-        _totalSupply = _totalSupply.add(amount);
-        _balances[msg.sender] = _balances[msg.sender].add(amount);
-        lpt.safeTransferFrom(msg.sender, address(this), amount);
+    function balanceOf0(address account) public view returns (uint256) {
+        return _balances0[account];
     }
 
-    function withdraw(uint256 amount) public virtual {
-        _totalSupply = _totalSupply.sub(amount);
-        _balances[msg.sender] = _balances[msg.sender].sub(amount);
-        lpt.safeTransfer(msg.sender, amount);
+    function balanceOf1(address account) public view returns (uint256) {
+        return _balances1[account];
+    }
+
+    function stake0(uint256 amount) public virtual {
+        _totalSupply0 = _totalSupply0.add(amount);
+        _balances0[msg.sender] = _balances0[msg.sender].add(amount);
+        lpt0.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    function stake1(uint256 amount) public virtual {
+        _totalSupply1 = _totalSupply1.add(amount);
+        _balances1[msg.sender] = _balances1[msg.sender].add(amount);
+        lpt1.safeTransferFrom(msg.sender, address(this), amount);
+    }
+
+    function withdraw0(uint256 amount) public virtual {
+        _totalSupply0 = _totalSupply0.sub(amount);
+        _balances0[msg.sender] = _balances0[msg.sender].sub(amount);
+        lpt0.safeTransfer(msg.sender, amount);
+    }
+
+    function withdraw1(uint256 amount) public virtual {
+        _totalSupply1 = _totalSupply1.sub(amount);
+        _balances1[msg.sender] = _balances1[msg.sender].sub(amount);
+        lpt1.safeTransfer(msg.sender, amount);
+    }
+
+    function setLpt0(address lp) public virtual {   
+        lpt0 = IERC20(lp);
+    }
+
+    function setLpt1(address lp) public virtual {   
+        lpt1 = IERC20(lp);
     }
 }
 
 
-contract LPPool is
-    LPTokenWrapper,
+contract LP2Pool is
+    LPTokenWrapper2,
     AdminRole
 {
     IERC20 public sShare;
@@ -55,6 +94,7 @@ contract LPPool is
     address public snGroup;
     mapping(address => uint256) public userRewardPerTokenPaid;
     mapping(address => uint256) public rewards;
+    uint8 public currentLpt = 0;
 
     event RewardAdded(uint256 reward);
     event Staked(address indexed user, uint256 amount);
@@ -69,7 +109,8 @@ contract LPPool is
         uint256 starttime_ 
     ) public {
         sShare = IERC20(sShare_);
-        lpt = IERC20(lptoken_);
+        lpt0 = IERC20(lptoken_);
+        lpt1 = IERC20(lptoken_);
         starttime = starttime_;
         initreward = initreward_;
         rewardRate = initreward.div(DURATION);
@@ -117,8 +158,22 @@ contract LPPool is
                 .div(100);
     }
 
-    // stake visibility is public as overriding LPTokenWrapper's stake() function
     function stake(uint256 amount)
+        public
+        updateReward(msg.sender)
+        checkhalve
+        checkStart
+    {
+        require(amount > 0, 'Cannot stake 0');
+        if(currentLpt == 0){
+            super.stake0(amount);
+        }else{
+            super.stake1(amount);
+        }
+        emit Staked(msg.sender, amount);
+    }
+
+    function stake0(uint256 amount)
         public
         override
         updateReward(msg.sender)
@@ -126,11 +181,38 @@ contract LPPool is
         checkStart
     {
         require(amount > 0, 'Cannot stake 0');
-        super.stake(amount);
+        super.stake0(amount);
+        emit Staked(msg.sender, amount);
+    }
+
+    function stake1(uint256 amount)
+        public
+        override
+        updateReward(msg.sender)
+        checkhalve
+        checkStart
+    {
+        require(amount > 0, 'Cannot stake 0');
+        super.stake1(amount);
         emit Staked(msg.sender, amount);
     }
 
     function withdraw(uint256 amount)
+        public
+        updateReward(msg.sender)
+        checkhalve
+        checkStart
+    {
+        require(amount > 0, 'Cannot withdraw 0');
+        if(currentLpt == 0){
+            super.withdraw0(amount);
+        }else{
+            super.withdraw1(amount);
+        }
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    function withdraw0(uint256 amount)
         public
         override
         updateReward(msg.sender)
@@ -138,12 +220,28 @@ contract LPPool is
         checkStart
     {
         require(amount > 0, 'Cannot withdraw 0');
-        super.withdraw(amount);
+        super.withdraw0(amount);
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    function withdraw1(uint256 amount)
+        public
+        override
+        updateReward(msg.sender)
+        checkhalve
+        checkStart
+    {
+        require(amount > 0, 'Cannot withdraw 0');
+        super.withdraw1(amount);
         emit Withdrawn(msg.sender, amount);
     }
 
     function exit() external {
-        withdraw(balanceOf(msg.sender));
+        if(currentLpt == 0){
+            withdraw0(balanceOf0(msg.sender));
+        }else{
+            withdraw1(balanceOf1(msg.sender));
+        }
         getReward();
     }
 
@@ -173,11 +271,24 @@ contract LPPool is
         _;
     }
 
-    function updateStartTime(uint256 starttime_)
-        external
-        onlyAdmin
-    {   
+    function updateStartTime(uint256 starttime_) external onlyAdmin{   
         starttime = starttime_;
+    }
+
+    function updateCurrentLpt() external onlyAdmin{ 
+        if(currentLpt == 0){
+            currentLpt = 1;
+        }else{
+            currentLpt = 0;
+        }
+    }
+
+    function setLpt0(address lp) public override onlyAdmin{   
+        super.setLpt0(lp);
+    }
+
+    function setLpt1(address lp) public override onlyAdmin{   
+        super.setLpt1(lp);
     }
 
     function transferShareAll(address account) external onlyAdmin{   

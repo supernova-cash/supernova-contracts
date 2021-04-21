@@ -5,12 +5,11 @@ import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
 import '@openzeppelin/contracts/utils/Address.sol';
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
 import '../utils/ContractGuard.sol';
-import '../interfaces/IRewardDistributionRecipient.sol';
 import '../interfaces/ISimpleERCFund.sol';
 import '../wrapper/CASHWrapper.sol';
 
 
-contract SharePool is CASHWrapper, IRewardDistributionRecipient, ContractGuard{
+contract SharePool is CASHWrapper, ContractGuard{
 
     uint256 public starttime;
     address public fund;
@@ -71,14 +70,6 @@ contract SharePool is CASHWrapper, IRewardDistributionRecipient, ContractGuard{
         }
     }
 
-    function notifyRewardAmount(uint256 reward)
-        external
-        override
-        onlyRewardDistribution
-    {
-        emit RewardAdded(reward);
-    }
-
     function release(uint256 amount) //每个周期执行一次
         external
         onlyOneBlock
@@ -111,6 +102,13 @@ contract SharePool is CASHWrapper, IRewardDistributionRecipient, ContractGuard{
         emit DespositFund(now, fundamount);
     
         balanceClean();
+    }
+
+    function updateStartTime(uint256 starttime_)
+        external
+        onlyAdmin
+    {   
+        starttime = starttime_;
     }
 
     function setFund(address newFund) public onlyAdmin {

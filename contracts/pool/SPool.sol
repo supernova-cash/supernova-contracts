@@ -1,82 +1,16 @@
 pragma solidity ^0.6.0;
-/**
- *Submitted for verification at Etherscan.io on 2020-07-17
- */
-
-/*
-   ____            __   __        __   _
-  / __/__ __ ___  / /_ / /  ___  / /_ (_)__ __
- _\ \ / // // _ \/ __// _ \/ -_)/ __// / \ \ /
-/___/ \_, //_//_/\__//_//_/\__/ \__//_/ /_\_\
-     /___/
-
-* Synthetix: BASISCASHRewards.sol
-*
-* Docs: https://docs.synthetix.io/
-*
-*
-* MIT License
-* ===========
-*
-* Copyright (c) 2020 Synthetix
-*
-* Permission is hereby granted, free of charge, to any person obtaining a copy
-* of this software and associated documentation files (the "Software"), to deal
-* in the Software without restriction, including without limitation the rights
-* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-* copies of the Software, and to permit persons to whom the Software is
-* furnished to do so, subject to the following conditions:
-*
-* The above copyright notice and this permission notice shall be included in all
-* copies or substantial portions of the Software.
-*
-* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-*/
-
-// File: @openzeppelin/contracts/math/Math.sol
-
 import '@openzeppelin/contracts/math/Math.sol';
-
-// File: @openzeppelin/contracts/math/SafeMath.sol
-
 import '@openzeppelin/contracts/math/SafeMath.sol';
-
-// File: @openzeppelin/contracts/token/ERC20/IERC20.sol
-
 import '@openzeppelin/contracts/token/ERC20/IERC20.sol';
-
-// File: @openzeppelin/contracts/utils/Address.sol
-
 import '@openzeppelin/contracts/utils/Address.sol';
-
-// File: @openzeppelin/contracts/token/ERC20/SafeERC20.sol
-
 import '@openzeppelin/contracts/token/ERC20/SafeERC20.sol';
-
-// File: contracts/IRewardDistributionRecipient.sol
-
-import '../interfaces/IRewardDistributionRecipient.sol';
-
-// File: contracts/interfaces/ISimpleERCFund.sol
-
 import '../interfaces/ISimpleERCFund.sol';
-
-// File: contracts/owner/AdminRole.sol'
-
 import '../owner/AdminRole.sol';
-
-// File: contracts/utils/ContractGuard.sol'
 import '../utils/ContractGuard.sol';
-
 import '../wrapper/PEGWrapper.sol';
 
 
-contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
+contract SPool is PEGWrapper, ContractGuard{
 
     uint256 public stake_duration;
     uint256 public starttime;
@@ -231,14 +165,6 @@ contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
         }
     }
 
-    function notifyRewardAmount(uint256 reward)
-        external
-        override
-        onlyRewardDistribution
-    {
-        emit RewardAdded(reward);
-    }
-
     function release(uint256 amount)
         external
         onlyOneBlock
@@ -275,6 +201,13 @@ contract SPool is PEGWrapper, IRewardDistributionRecipient, ContractGuard{
         );
         emit DespositFund(now, fundamount);
         once = false;
+    }
+
+    function updateStartTime(uint256 starttime_)
+        external
+        onlyAdmin
+    {   
+        starttime = starttime_;
     }
 
     event RewardAdded(uint256 reward);
